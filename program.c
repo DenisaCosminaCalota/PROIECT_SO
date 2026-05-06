@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 #define MAXIM_CARACTERE 100
 
@@ -77,6 +79,40 @@ int match_condition(ReportFile *raport, const char *camp, const char *operator, 
     }
     return 0;
 }
+void remove_district(const char *nume_district, const char *rol_utilizator) {
+    if (rol_utilizator == NULL || strcmp(rol_utilizator, "manager") != 0) {
+        printf("Acces interzis: Doar managerul poate sterge districte.\n");
+        return;
+    }
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("Eroare la fork");
+        return;
+    }
+
+    if (pid == 0) {
+        execlp("rm", "rm", "-rf", nume_district, NULL);
+        perror("Eroare la execlp");
+        exit(1);
+    } else {
+        int status;
+        waitpid(pid, &status, 0);
+
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            char nume_link[256];
+            sprintf(nume_link, "active_reports-%s", nume_district);
+
+            if (unlink(nume_link) == -1) {
+                if (errno != ENOENT) perror("Eroare la eliminarea symlink-ului");
+            }
+            printf("Districtul '%s' a fost eliminat complet.\n", nume_district);
+        } else {
+            printf("Eroare: Procesul rm nu a terminat corect.\n");
+        }
+    }
+}
 
 
 int main(int argc, char *argv[]) {
@@ -100,6 +136,7 @@ int main(int argc, char *argv[]) {
     sprintf(cale_config, "%s/district.cfg", nume_district);
 
     if (strcmp(comanda, "add") == 0) {
+
         mkdir(nume_district, PERMISIUNI_DIRECTOR);
         int descriptor_fisier = open(cale_rapoarte, O_WRONLY | O_CREAT | O_APPEND, PERMISIUNI_RAPOARTE);
 
@@ -209,6 +246,9 @@ int main(int argc, char *argv[]) {
         close(descriptor_fisier);
         chmod(cale_config, PERMISIUNI_CONFIG);
         printf("Prag severitate actualizat.\n");
+    }
+    else if (strcmp(comanda, "remove_district") == 0) {
+        remove_district(nume_district, rol_utilizator);
     }
 
     return 0;
