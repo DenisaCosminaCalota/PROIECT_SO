@@ -136,19 +136,46 @@ int main(int argc, char *argv[]) {
     sprintf(cale_config, "%s/district.cfg", nume_district);
 
     if (strcmp(comanda, "add") == 0) {
-
         mkdir(nume_district, PERMISIUNI_DIRECTOR);
+
+        char cale_contor[256];
+        sprintf(cale_contor, "%s/numaratoare.txt", nume_district);
+
+        int rapoarte_prezente = 0;
+        int ultimul_id_creat = 0;
+
+        FILE *f = fopen(cale_contor, "r");
+        if (f != NULL) {
+            fscanf(f, "%d %d", &rapoarte_prezente, &ultimul_id_creat);
+            fclose(f);
+        }
+
+        ultimul_id_creat++;
+        rapoarte_prezente++;
+
+        f = fopen(cale_contor, "w");
+        if (f != NULL) {
+            fprintf(f, "%d %d", rapoarte_prezente, ultimul_id_creat);
+            fclose(f);
+        }
+
         int descriptor_fisier = open(cale_rapoarte, O_WRONLY | O_CREAT | O_APPEND, PERMISIUNI_RAPOARTE);
 
         ReportFile raport_nou;
         memset(&raport_nou, 0, sizeof(ReportFile));
 
-        printf("ID Raport: "); scanf("%d", &raport_nou.reportId);
-        printf("Coordonate GPS (Lat Lon): "); scanf("%lf %lf", &raport_nou.GPSCoordinates.latitude, &raport_nou.GPSCoordinates.longitude);
-        printf("Categorie: "); scanf("%s", raport_nou.issueCategory);
-        printf("Severitate: "); scanf("%d", &raport_nou.severityLevel);
-        getchar(); // Clear buffer
-        printf("Descriere: "); fgets(raport_nou.descriptionText, MAXIM_CARACTERE, stdin);
+        raport_nou.reportId = ultimul_id_creat;
+
+        printf("ID alocat automat: %d\n", raport_nou.reportId);
+        printf("Coordonate GPS (Lat Lon): ");
+        scanf("%lf %lf", &raport_nou.GPSCoordinates.latitude, &raport_nou.GPSCoordinates.longitude);
+        printf("Categorie: ");
+        scanf("%s", raport_nou.issueCategory);
+        printf("Severitate: ");
+        scanf("%d", &raport_nou.severityLevel);
+        getchar();
+        printf("Descriere: ");
+        fgets(raport_nou.descriptionText, MAXIM_CARACTERE, stdin);
         raport_nou.descriptionText[strcspn(raport_nou.descriptionText, "\n")] = 0;
 
         strcpy(raport_nou.inspectorName, nume_utilizator);
@@ -156,12 +183,16 @@ int main(int argc, char *argv[]) {
 
         write(descriptor_fisier, &raport_nou, sizeof(ReportFile));
         close(descriptor_fisier);
+
         chmod(cale_rapoarte, PERMISIUNI_RAPOARTE);
 
-        char nume_link[256]; sprintf(nume_link, "active_reports-%s", nume_district);
-        unlink(nume_link); symlink(cale_rapoarte, nume_link);
+        char nume_link[256];
+        sprintf(nume_link, "active_reports-%s", nume_district);
+        unlink(nume_link);
+        symlink(cale_rapoarte, nume_link);
 
         inregistreaza_operatiune_log(nume_district, nume_utilizator, rol_utilizator, "Adaugat raport nou");
+        printf("Raport salvat cu succes.\n");
     }
 
     else if (strcmp(comanda, "list") == 0) {
