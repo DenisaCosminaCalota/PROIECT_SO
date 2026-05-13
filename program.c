@@ -140,19 +140,14 @@ int main(int argc, char *argv[]) {
 
         char cale_contor[256];
         sprintf(cale_contor, "%s/numaratoare.txt", nume_district);
-
-        int rapoarte_prezente = 0;
-        int ultimul_id_creat = 0;
-
+        int rapoarte_prezente = 0, ultimul_id_creat = 0;
         FILE *f = fopen(cale_contor, "r");
         if (f != NULL) {
             fscanf(f, "%d %d", &rapoarte_prezente, &ultimul_id_creat);
             fclose(f);
         }
-
         ultimul_id_creat++;
         rapoarte_prezente++;
-
         f = fopen(cale_contor, "w");
         if (f != NULL) {
             fprintf(f, "%d %d", rapoarte_prezente, ultimul_id_creat);
@@ -160,10 +155,8 @@ int main(int argc, char *argv[]) {
         }
 
         int descriptor_fisier = open(cale_rapoarte, O_WRONLY | O_CREAT | O_APPEND, PERMISIUNI_RAPOARTE);
-
         ReportFile raport_nou;
         memset(&raport_nou, 0, sizeof(ReportFile));
-
         raport_nou.reportId = ultimul_id_creat;
 
         printf("ID alocat automat: %d\n", raport_nou.reportId);
@@ -177,24 +170,43 @@ int main(int argc, char *argv[]) {
         printf("Descriere: ");
         fgets(raport_nou.descriptionText, MAXIM_CARACTERE, stdin);
         raport_nou.descriptionText[strcspn(raport_nou.descriptionText, "\n")] = 0;
-
         strcpy(raport_nou.inspectorName, nume_utilizator);
         raport_nou.timestamp = time(NULL);
 
         write(descriptor_fisier, &raport_nou, sizeof(ReportFile));
         close(descriptor_fisier);
-
         chmod(cale_rapoarte, PERMISIUNI_RAPOARTE);
+
+        int monitor_a_fost_notificat = 0;
+        int descriptor_citire_pid = open(".monitor_pid", O_RDONLY);
+        if (descriptor_citire_pid != -1) {
+            char buffer_pid[16];
+            ssize_t bytes_cititi = read(descriptor_citire_pid, buffer_pid, sizeof(buffer_pid) - 1);
+            if (bytes_cititi > 0) {
+                buffer_pid[bytes_cititi] = '\0';
+                pid_t pid_monitor = atoi(buffer_pid);
+                if (kill(pid_monitor, SIGUSR1) == 0) {
+                    monitor_a_fost_notificat = 1;
+                }
+            }
+            close(descriptor_citire_pid);
+        }
 
         char nume_link[256];
         sprintf(nume_link, "active_reports-%s", nume_district);
         unlink(nume_link);
         symlink(cale_rapoarte, nume_link);
 
-        inregistreaza_operatiune_log(nume_district, nume_utilizator, rol_utilizator, "Adaugat raport nou");
-        printf("Raport salvat cu succes.\n");
-    }
+        char mesaj_log[256];
+        if (monitor_a_fost_notificat) {
+            sprintf(mesaj_log, "Raport %d adaugat. Monitor notificat.", ultimul_id_creat);
+        } else {
+            sprintf(mesaj_log, "Raport %d adaugat. Monitorul nu a raspuns.", ultimul_id_creat);
+        }
+        inregistreaza_operatiune_log(nume_district, nume_utilizator, rol_utilizator, mesaj_log);
 
+        printf("Raport salvat. Status Monitor: %s\n", monitor_a_fost_notificat ? "NOTIFICAT" : "INACTIV");
+    }
     else if (strcmp(comanda, "list") == 0) {
         struct stat info_fisier;
         if (lstat(cale_rapoarte, &info_fisier) < 0) {
