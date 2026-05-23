@@ -137,27 +137,41 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(comanda, "add") == 0) {
         mkdir(nume_district, PERMISIUNI_DIRECTOR);
-
-        char cale_contor[256];
-        sprintf(cale_contor, "%s/numaratoare.txt", nume_district);
-        int rapoarte_prezente = 0, ultimul_id_creat = 0;
-        FILE *f = fopen(cale_contor, "r");
-        if (f != NULL) {
-            fscanf(f, "%d %d", &rapoarte_prezente, &ultimul_id_creat);
-            fclose(f);
-        }
-        ultimul_id_creat++;
-        rapoarte_prezente++;
-        f = fopen(cale_contor, "w");
-        if (f != NULL) {
-            fprintf(f, "%d %d", rapoarte_prezente, ultimul_id_creat);
-            fclose(f);
-        }
-
+        chmod(nume_district, PERMISIUNI_DIRECTOR);
         int descriptor_fisier = open(cale_rapoarte, O_WRONLY | O_CREAT | O_APPEND, PERMISIUNI_RAPOARTE);
+        if(descriptor_fisier < 0) { perror("Eroare deschidere fisier rapoarte");
+            return 1;
+
+        }
+
         ReportFile raport_nou;
         memset(&raport_nou, 0, sizeof(ReportFile));
-        raport_nou.reportId = ultimul_id_creat;
+
+        char cale_contor[256];
+        sprintf(cale_contor, "%s/last_id.txt", nume_district);
+
+        int id_alocat = 1;
+        int fd_contor = open(cale_contor, O_RDWR | O_CREAT, PERMISIUNI_CONFIG);
+
+        if (fd_contor >= 0) {
+            char buf_id[16];
+            ssize_t bytes_cititi = read(fd_contor, buf_id, sizeof(buf_id) - 1);
+
+            if (bytes_cititi > 0) {
+                buf_id[bytes_cititi] = '\0';
+                id_alocat = atoi(buf_id) + 1;
+            }
+
+            lseek(fd_contor, 0, SEEK_SET);
+            ftruncate(fd_contor, 0);
+
+            char buf_scriere[16];
+            int len_scriere = sprintf(buf_scriere, "%d", id_alocat);
+            write(fd_contor, buf_scriere, len_scriere);
+            close(fd_contor);
+        }
+
+        raport_nou.reportId = id_alocat;
 
         printf("ID alocat automat: %d\n", raport_nou.reportId);
         printf("Coordonate GPS (Lat Lon): ");
@@ -168,6 +182,7 @@ int main(int argc, char *argv[]) {
         scanf("%d", &raport_nou.severityLevel);
         getchar();
         printf("Descriere: ");
+
         fgets(raport_nou.descriptionText, MAXIM_CARACTERE, stdin);
         raport_nou.descriptionText[strcspn(raport_nou.descriptionText, "\n")] = 0;
         strcpy(raport_nou.inspectorName, nume_utilizator);
@@ -199,9 +214,9 @@ int main(int argc, char *argv[]) {
 
         char mesaj_log[256];
         if (monitor_a_fost_notificat) {
-            sprintf(mesaj_log, "Raport %d adaugat. Monitor notificat.", ultimul_id_creat);
+            sprintf(mesaj_log, "Raport %d adaugat. Monitor notificat.", id_alocat);
         } else {
-            sprintf(mesaj_log, "Raport %d adaugat. Monitorul nu a raspuns.", ultimul_id_creat);
+            sprintf(mesaj_log, "Raport %d adaugat. Monitorul nu a raspuns.", id_alocat);
         }
         inregistreaza_operatiune_log(nume_district, nume_utilizator, rol_utilizator, mesaj_log);
 
@@ -293,6 +308,7 @@ int main(int argc, char *argv[]) {
     else if (strcmp(comanda, "remove_district") == 0) {
         remove_district(nume_district, rol_utilizator);
     }
+
 
     return 0;
 }

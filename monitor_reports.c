@@ -23,6 +23,24 @@ void handle_signal(int signal) {
 }
 
 int main() {
+    int f_pid_citire = open(PID_FILE, O_RDONLY);
+    if (f_pid_citire >= 0) {
+        char buf_pid[16];
+        ssize_t bytes_cititi = read(f_pid_citire, buf_pid, sizeof(buf_pid) - 1);
+        close(f_pid_citire);
+
+        if (bytes_cititi > 0) {
+            buf_pid[bytes_cititi] = '\0';
+            pid_t pid_existent = atoi(buf_pid);
+
+            if (kill(pid_existent, 0) == 0) {
+
+                printf("ERROR: Un monitor ruleaza deja cu PID-ul %d\n", pid_existent);
+                fflush(stdout);
+                return 1;
+            }
+        }
+    }
     struct sigaction action;
     memset(&action, 0, sizeof(struct sigaction));
     action.sa_handler = handle_signal;

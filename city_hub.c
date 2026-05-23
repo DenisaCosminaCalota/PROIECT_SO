@@ -3,12 +3,88 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 #define MAX_CMD_LEN 1024
 
 void display_prompt() {
     printf("city_hub > ");
     fflush(stdout);
+}
+int citeste_linie(int fd, char *buffer, int lungime_maxima) {
+    int bytes_cititi = 0;
+    char caracter;
+
+    while (bytes_cititi < lungime_maxima - 1) {
+        int rezultat = read(fd, &caracter, 1);
+        if (rezultat <= 0) return bytes_cititi; // S-a terminat fluxul sau avem eroare
+        if (caracter == '\n') break;
+        buffer[bytes_cititi++] = caracter;
+    }
+    buffer[bytes_cititi] = '\0';
+    return bytes_cititi + 1;
+}
+
+void calculate_scores(char *argumente) {
+    char *districte[50];
+    int nr_districte = 0;
+
+    char *token = strtok(argumente, " ");
+    while (token != NULL && nr_districte < 50) {
+        districte[nr_districte++] = token;
+        token = strtok(NULL, " ");
+    }
+
+    if (nr_districte == 0) {
+        printf("Eroare: Trebuie sa specifici cel putin un district.\n");
+        return;
+    }
+
+    int pipe_scoreri[50][2];
+    pid_t pid_scoreri[50];
+
+    for (int i = 0; i < nr_districte; i++) {
+        if (pipe(pipe_scoreri[i]) == -1) {
+            perror("Eroare la crearea pipe-ului");
+            return;
+        }
+
+        pid_scoreri[i] = fork();
+        if (pid_scoreri[i] < 0) {
+            perror("Eroare la fork");
+            return;
+        }
+
+        if (pid_scoreri[i] == 0) {
+            close(pipe_scoreri[i][0]);
+
+            if (dup2(pipe_scoreri[i][1], STDOUT_FILENO) == -1) {
+                perror("Eroare la dup2");
+                exit(1);
+            }
+            close(pipe_scoreri[i][1]);
+
+            execl("./scorer", "scorer", districte[i], NULL);
+            perror("Eroare la executia programului scorer");
+            exit(1);
+        } else {
+            close(pipe_scoreri[i][1]);
+        }
+    }
+
+    printf("\n RAPORT CENTRALIZAT WORKLOAD \n");
+    for (int i = 0; i < nr_districte; i++) {
+        char buffer_text[1024];
+        int caractere_citite;
+
+        while ((caractere_citite = read(pipe_scoreri[i][0], buffer_text, sizeof(buffer_text) - 1)) > 0) {
+            buffer_text[caractere_citite] = '\0';
+            printf("%s", buffer_text);
+        }
+        close(pipe_scoreri[i][0]);
+        waitpid(pid_scoreri[i], NULL, 0);
+    }
+    printf("\n\n");
 }
 
 int main() {
@@ -25,6 +101,9 @@ int main() {
 
         input[strcspn(input, "\n")] = 0;
 
+        char copie_input[MAX_CMD_LEN];
+        strcpy(copie_input, input);
+
         command = strtok(input, " ");
         if (command == NULL) continue;
 
@@ -35,23 +114,73 @@ int main() {
         else if (strcmp(command, "start_monitor") == 0) {
             printf("[HUB] Se incearca pornirea monitorului\n");
             pid_t hub_mon_pid = fork();
-            if(hub_mon_pid < 0){
-                printf("Eroare la fork");
+            if (hub_mon_pid < 0) {
+                printf("Eroare la fork\n");
             }
-            if(hub_mon_pid == 0){
-                int pipefd[2];
-                if(pipe(pipefd) == -1){
-                    printf("Eroare la pipe");
+
+            if (hub_mon_pid == 0) {
+                int pipe_monitor[2];
+                if (pipe(pipe_monitor) == -1) {
+                    printf("Eroare la pipe\n");
+                    exit(1);
                 }
 
+                pid_t monitor_pid = fork();
+                if (monitor_pid < 0) {
+                    printf("Eroare la fork monitor\n");
+                    exit(1);
+                }
+
+                if (monitor_pid == 0) {
+
+                    close(pipe_monitor[0]);
+
+                    if (dup2(pipe_monitor[1], STDOUT_FILENO) == -1) {
+                        perror("Eroare dup2");
+                        exit(1);
+                    }
+                    close(pipe_monitor[1]);
+
+                    execl("./monitor_reports", "monitor_reports", NULL);
+                    perror("Eroare la lansarea monitor_reports");
+                    exit(1);
+                }
+
+                close(pipe_monitor[1]);
+
+                char buffer_linie[512];
+                while (citeste_linie(pipe_monitor[0], buffer_linie, sizeof(buffer_linie)) > 0) {
+
+                    if (strncmp(buffer_linie, "ERROR:", 6) == 0) {
+                        printf("\n[HUB ALERT] Instanta respinsa: %s\n", buffer_linie + 6);
+                        fflush(stdout);
+                    }
+                    else if (strncmp(buffer_linie, "ALERT:", 6) == 0) {
+                        printf("\n[MONITOR ALERT] Incident semnalat: %s\n", buffer_linie + 6);
+                        fflush(stdout);
+                    }
+                    else {
+                        printf("\n[MONITOR LOG] %s\n", buffer_linie);
+                        fflush(stdout);
+                    }
+                }
+
+                close(pipe_monitor[0]);
+                printf("\n[HUB INFO] Procesul monitor s-a terminat.\n");
+                fflush(stdout);
+                exit(0);
             }
         }
         else if (strcmp(command, "calculate_scores") == 0) {
-            args = strtok(NULL, "");
-            if (args == NULL) {
+            args = copie_input + strlen(command) + 1;
+
+            while (*args == ' ') args++;
+
+            if (strlen(args) == 0) {
                 printf("Eroare: Trebuie sa specifici cel putin un district.\n");
             } else {
                 printf("[HUB] Se calculeaza scorurile pentru: %s\n", args);
+                calculate_scores(args);
             }
         }
         else {
