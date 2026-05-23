@@ -17,6 +17,7 @@ Toată logica de gestionare a fișierelor (apelurile de sistem open, write, lsee
 
 
 Documentație utilizare AI - Faza 2
+
 Pentru realizarea celei de-a doua etape a proiectului, am utilizat asistența AI mai mult pentru gestionarea semnalelor și structura de bază a proceselor:
 
 Am cerut ajutor pentru generarea scheletului de cod legat de crearea procesului fundal de tip daemon pentru Hub și pentru logica de scriere a PID-ului în fișierul ascuns .monitor_pid. Pentru partea de notificare în timp real, am solicitat o soluție prin care city_manager să poată anunța monitorul de fiecare dată când apare un raport nou, iar AI-ul a propus utilizarea funcției kill împreună cu semnalul SIGUSR1.
@@ -28,6 +29,7 @@ Toată logica de calcul concurent al scorurilor de prioritate și maparea pe dir
 
 
 Documentație utilizare AI - Faza 3
+
 Pentru realizarea etapei finale a proiectului, am utilizat asistența AI pentru gestionarea cazurilor limită la ștergerea datelor și curățarea legăturilor:
 
 Am folosit AI pentru a pune la punct logica de parcurgere și golire a fișierelor dintr-un director înainte de a putea apela funcția de ștergere a folderului complet pentru comanda remove_district. De asemenea, am cerut o confirmare legată de gestionarea corectă a link-urilor simbolice, AI-ul amintindu-mi să folosesc apelul de sistem unlink pentru a șterge scurtăturile din folderul principal.
