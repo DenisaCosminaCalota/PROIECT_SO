@@ -17,6 +17,7 @@
 #define PERMISIUNI_CONFIG   0640   // rw-r-----
 #define PERMISIUNI_LOG      0644   // rw-r--r--
 
+// structura folosita pentru salvarea unui raport in fisier
 typedef struct {
     int reportId;
     char inspectorName[MAXIM_CARACTERE];
@@ -30,6 +31,7 @@ typedef struct {
     char descriptionText[MAXIM_CARACTERE];
 } ReportFile;
 
+//transforma permisiunile din numere in format (rwx), pentru afisare
 void transforma_permisiuni_in_text(mode_t mod_fisier, char *sir_destinatie) {
     sir_destinatie[0] = (mod_fisier & S_IRUSR) ? 'r' : '-';
     sir_destinatie[1] = (mod_fisier & S_IWUSR) ? 'w' : '-';
@@ -43,6 +45,8 @@ void transforma_permisiuni_in_text(mode_t mod_fisier, char *sir_destinatie) {
     sir_destinatie[9] = '\0';
 }
 
+// scrie actiunile utilizatorilor în fisierul de log
+//foloseste O_APPEND pentru a adauga date la finalul fisierului, fara a suprascrie istoricul
 void inregistreaza_operatiune_log(const char *nume_district, const char *nume_utilizator, const char *rol_utilizator, const char *actiune) {
     char cale_log[256];
     sprintf(cale_log, "%s/logged_district", nume_district);
@@ -61,11 +65,12 @@ void inregistreaza_operatiune_log(const char *nume_district, const char *nume_ut
     }
 }
 
-
+// extrage campul, operatorul si valoarea pentru filtre
 int parse_condition(const char *input, char *field, char *op, char *value) {
     return sscanf(input, "%[^:]:%[^:]:%s", field, op, value) == 3;
 }
 
+// verifica daca raportul respecta filtrul
 int match_condition(ReportFile *raport, const char *camp, const char *operator, const char *valoare) {
     if (strcmp(camp, "severity") == 0) {
         int v = atoi(valoare);
@@ -79,6 +84,9 @@ int match_condition(ReportFile *raport, const char *camp, const char *operator, 
     }
     return 0;
 }
+
+// sterge directorul unui district verifica mai intai dacă utilizatorul are drepturi de "manager", apoi, creează un proces separat (fork) care ruleaza comanda de sistem "rm - rf" pentru a sterge efectiv dosarul
+//parintele asteapta finalizarea operațiunii (waitpid), si, dacă totul a decurs corect, elimina si legatura simbolica (unlink) ramasa
 void remove_district(const char *nume_district, const char *rol_utilizator) {
     if (rol_utilizator == NULL || strcmp(rol_utilizator, "manager") != 0) {
         printf("Acces interzis: Doar managerul poate sterge districte.\n");
@@ -93,13 +101,16 @@ void remove_district(const char *nume_district, const char *rol_utilizator) {
     }
 
     if (pid == 0) {
+        // procesul copil executa stergerea fortata a directorului
         execlp("rm", "rm", "-rf", nume_district, NULL);
         perror("Eroare la execlp");
         exit(1);
     } else {
+        // procesul parinte monitorizeaza finalizarea copilului
         int status;
         waitpid(pid, &status, 0);
 
+        // daca stergerea directorului a reusit, se elimina si link-ul asociat
         if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
             char nume_link[256];
             sprintf(nume_link, "active_reports-%s", nume_district);
@@ -119,6 +130,7 @@ int main(int argc, char *argv[]) {
     char *rol_utilizator = NULL, *nume_utilizator = NULL, *comanda = NULL, *nume_district = NULL;
     int index_filtre = 0;
 
+    // extrag argumentele din linia de comanda
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--role") == 0) rol_utilizator = argv[++i];
         else if (strcmp(argv[i], "--user") == 0) nume_utilizator = argv[++i];
@@ -126,6 +138,7 @@ int main(int argc, char *argv[]) {
         else if (nume_district == NULL) { nume_district = argv[i]; index_filtre = i + 1; }
     }
 
+    // verific argumentele obligatorii
     if (!rol_utilizator || !comanda || !nume_district) {
         printf("Eroare: Lipsesc argumente obligatorii.\n");
         return 1;
@@ -135,6 +148,8 @@ int main(int argc, char *argv[]) {
     sprintf(cale_rapoarte, "%s/reports.dat", nume_district);
     sprintf(cale_config, "%s/district.cfg", nume_district);
 
+    //salvează un raport nou
+    //notifica monitorul prin semnalul SIGUSR1
     if (strcmp(comanda, "add") == 0) {
         mkdir(nume_district, PERMISIUNI_DIRECTOR);
         chmod(nume_district, PERMISIUNI_DIRECTOR);
@@ -147,6 +162,7 @@ int main(int argc, char *argv[]) {
         ReportFile raport_nou;
         memset(&raport_nou, 0, sizeof(ReportFile));
 
+        // genereaza automat ID-ul raportului
         char cale_contor[256];
         sprintf(cale_contor, "%s/last_id.txt", nume_district);
 
@@ -173,6 +189,7 @@ int main(int argc, char *argv[]) {
 
         raport_nou.reportId = id_alocat;
 
+        // citirea datelor raportului
         printf("ID alocat automat: %d\n", raport_nou.reportId);
         printf("Coordonate GPS (Lat Lon): ");
         scanf("%lf %lf", &raport_nou.GPSCoordinates.latitude, &raport_nou.GPSCoordinates.longitude);
@@ -188,10 +205,12 @@ int main(int argc, char *argv[]) {
         strcpy(raport_nou.inspectorName, nume_utilizator);
         raport_nou.timestamp = time(NULL);
 
+        // salvarea raportului in fisier
         write(descriptor_fisier, &raport_nou, sizeof(ReportFile));
         close(descriptor_fisier);
         chmod(cale_rapoarte, PERMISIUNI_RAPOARTE);
 
+        // notific monitorul prin SIGUSR1
         int monitor_a_fost_notificat = 0;
         int descriptor_citire_pid = open(".monitor_pid", O_RDONLY);
         if (descriptor_citire_pid != -1) {
@@ -207,6 +226,7 @@ int main(int argc, char *argv[]) {
             close(descriptor_citire_pid);
         }
 
+        // creez symlink catre rapoarte
         char nume_link[256];
         sprintf(nume_link, "active_reports-%s", nume_district);
         unlink(nume_link);
@@ -222,6 +242,7 @@ int main(int argc, char *argv[]) {
 
         printf("Raport salvat. Status Monitor: %s\n", monitor_a_fost_notificat ? "NOTIFICAT" : "INACTIV");
     }
+    /* Citește și afișează conținutul fișierului de rapoarte. */
     else if (strcmp(comanda, "list") == 0) {
         struct stat info_fisier;
         if (lstat(cale_rapoarte, &info_fisier) < 0) {
@@ -242,6 +263,7 @@ int main(int argc, char *argv[]) {
         close(descriptor_fisier);
     }
 
+    /* Elimină un raport prin mutarea datelor următoare peste acesta și redimensionarea fișierului. */
     else if (strcmp(comanda, "remove_report") == 0) {
         if (strcmp(rol_utilizator, "manager") != 0) {
             printf("Acces interzis: Doar managerul poate sterge rapoarte.\n");
@@ -270,6 +292,7 @@ int main(int argc, char *argv[]) {
         close(descriptor_fisier);
     }
 
+    /* Parcurge rapoartele și afișează doar ce corespunde criteriilor. */
     else if (strcmp(comanda, "filter") == 0) {
         int descriptor_fisier = open(cale_rapoarte, O_RDONLY);
         ReportFile raport_analizat;
@@ -288,6 +311,9 @@ int main(int argc, char *argv[]) {
         }
         close(descriptor_fisier);
     }
+
+    /* Actualizează pragul de severitate.
+       Doar managerul are voie să modifice pragul. Înainte de scriere,  verifică dacă cineva a umblat la permisiunile fișierului de configurare. */
     else if (strcmp(comanda, "update_threshold") == 0) {
         if (strcmp(rol_utilizator, "manager") != 0) { printf("Refuzat.\n"); return 1; }
 
@@ -305,6 +331,8 @@ int main(int argc, char *argv[]) {
         chmod(cale_config, PERMISIUNI_CONFIG);
         printf("Prag severitate actualizat.\n");
     }
+
+    /* Șterge complet un district. Apelează logica definită anterior pentru curățarea directoarelor și a link-urilor. */
     else if (strcmp(comanda, "remove_district") == 0) {
         remove_district(nume_district, rol_utilizator);
     }

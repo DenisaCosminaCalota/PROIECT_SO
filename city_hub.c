@@ -11,13 +11,17 @@ void display_prompt() {
     printf("city_hub > ");
     fflush(stdout);
 }
+
+// functie care citeste o linie caracter cu caracter din pipe
 int citeste_linie(int fd, char *buffer, int lungime_maxima) {
     int bytes_cititi = 0;
     char caracter;
 
     while (bytes_cititi < lungime_maxima - 1) {
         int rezultat = read(fd, &caracter, 1);
-        if (rezultat <= 0) return bytes_cititi; // S-a terminat fluxul sau avem eroare
+
+        // daca s-a terminat fluxul sau apare eroare
+        if (rezultat <= 0) return bytes_cititi;
         if (caracter == '\n') break;
         buffer[bytes_cititi++] = caracter;
     }
@@ -25,10 +29,12 @@ int citeste_linie(int fd, char *buffer, int lungime_maxima) {
     return bytes_cititi + 1;
 }
 
+// calculeaza scorurile pentru toate districtele primite
 void calculate_scores(char *argumente) {
     char *districte[50];
     int nr_districte = 0;
 
+    // separ argumentele in functie de spatiu
     char *token = strtok(argumente, " ");
     while (token != NULL && nr_districte < 50) {
         districte[nr_districte++] = token;
@@ -43,6 +49,7 @@ void calculate_scores(char *argumente) {
     int pipe_scoreri[50][2];
     pid_t pid_scoreri[50];
 
+    // pentru fiecare district creez un proces scorer
     for (int i = 0; i < nr_districte; i++) {
         if (pipe(pipe_scoreri[i]) == -1) {
             perror("Eroare la crearea pipe-ului");
@@ -55,15 +62,17 @@ void calculate_scores(char *argumente) {
             return;
         }
 
+        // proces copil
         if (pid_scoreri[i] == 0) {
             close(pipe_scoreri[i][0]);
-
+            // redirectionez stdout spre pipe
             if (dup2(pipe_scoreri[i][1], STDOUT_FILENO) == -1) {
                 perror("Eroare la dup2");
                 exit(1);
             }
             close(pipe_scoreri[i][1]);
 
+            // execut programul scorer
             execl("./scorer", "scorer", districte[i], NULL);
             perror("Eroare la executia programului scorer");
             exit(1);
@@ -73,6 +82,8 @@ void calculate_scores(char *argumente) {
     }
 
     printf("\n RAPORT CENTRALIZAT WORKLOAD \n");
+
+     // citesc rezultatele venite de la fiecare scorer
     for (int i = 0; i < nr_districte; i++) {
         char buffer_text[1024];
         int caractere_citite;
@@ -104,6 +115,7 @@ int main() {
         char copie_input[MAX_CMD_LEN];
         strcpy(copie_input, input);
 
+        // extrag comanda introdusa
         command = strtok(input, " ");
         if (command == NULL) continue;
 
@@ -111,6 +123,7 @@ int main() {
             printf("Inchidere City Hub\n");
             break;
         }
+        // porneste procesul monitor
         else if (strcmp(command, "start_monitor") == 0) {
             printf("[HUB] Se incearca pornirea monitorului\n");
             pid_t hub_mon_pid = fork();
@@ -118,6 +131,7 @@ int main() {
                 printf("Eroare la fork\n");
             }
 
+            // proces copil pentru monitor
             if (hub_mon_pid == 0) {
                 int pipe_monitor[2];
                 if (pipe(pipe_monitor) == -1) {
@@ -131,10 +145,12 @@ int main() {
                     exit(1);
                 }
 
+                // procesul care executa monitorul
                 if (monitor_pid == 0) {
 
                     close(pipe_monitor[0]);
 
+                    // trimit stdout in pipe
                     if (dup2(pipe_monitor[1], STDOUT_FILENO) == -1) {
                         perror("Eroare dup2");
                         exit(1);
@@ -149,6 +165,8 @@ int main() {
                 close(pipe_monitor[1]);
 
                 char buffer_linie[512];
+
+                // citesc mesajele venite de la monitor
                 while (citeste_linie(pipe_monitor[0], buffer_linie, sizeof(buffer_linie)) > 0) {
 
                     if (strncmp(buffer_linie, "ERROR:", 6) == 0) {
@@ -171,6 +189,8 @@ int main() {
                 exit(0);
             }
         }
+
+        // calculeaza scorurile pentru districtele date
         else if (strcmp(command, "calculate_scores") == 0) {
             args = copie_input + strlen(command) + 1;
 
