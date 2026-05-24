@@ -8,6 +8,7 @@
 #define MAXIM_CARACTERE 100
 #define NUMAR_MAXIM_INSPECTORI 100
 
+// structura folosita pentru citirea rapoartelor din fisier
 typedef struct {
     int reportId;
     char inspectorName[MAXIM_CARACTERE];
@@ -21,6 +22,7 @@ typedef struct {
     char descriptionText[MAXIM_CARACTERE];
 } ReportFile;
 
+// structura folosita pentru scorurile inspectorilor
 typedef struct {
     char nume_inspector[MAXIM_CARACTERE];
     int scor_total;
@@ -32,6 +34,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+// construiesc calea catre fisierul de rapoarte
     char cale_rapoarte[512];
     sprintf(cale_rapoarte, "%s/reports.dat", argv[1]);
     int fd= open(cale_rapoarte, O_RDONLY);
@@ -45,17 +48,23 @@ int main(int argc, char *argv[]) {
 
     memset(lista, 0, sizeof(lista));
     ReportFile r;
+
+    // citesc toate rapoartele din fisier
     while(read(fd, &r, sizeof(ReportFile))== sizeof(ReportFile)){
         int gasit =-1;
+
+        // caut daca inspectorul exista deja in lista
         for(int i=0; i<contorInspectori; i++){
             if(strcmp(lista[i].nume_inspector, r.inspectorName)== 0){
                 gasit= i;
                 break;
             }
         }
+        // daca exista, adaug severitatea la scor
         if (gasit != -1) {
             lista[gasit].scor_total += r.severityLevel;
         } else {
+            // daca nu exista, il adaug in lista
             if (contorInspectori < NUMAR_MAXIM_INSPECTORI) {
                 strcpy(lista[contorInspectori].nume_inspector, r.inspectorName);
                 lista[contorInspectori].scor_total = r.severityLevel;
